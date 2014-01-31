@@ -1,0 +1,331 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+<head>
+<script type="text/javascript" src="http://code.jquery.com/jquery-1.7.1.min.js"></script>
+<script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jqueryui/1.8.18/jquery-ui.min.js"></script>
+<link rel="stylesheet" href="http://ajax.googleapis.com/ajax/libs/jqueryui/1.8.18/themes/ui-lightness/jquery-ui.css" />
+<!-- Add fancyBox -->
+<link rel="stylesheet" href="fancyBox/source/jquery.fancybox.css?v=2.0.4" type="text/css" media="screen" />
+<script type="text/javascript" src="fancyBox/source/jquery.fancybox.pack.js?v=2.0.4"></script>
+<!-- Add settings UI -->
+<script type="text/javascript" src="kepler_settings.js"></script>
+<script type="text/javascript">
+//----------------------- variables -----------------------
+var G=20; //gravitational constant
+var presets = [
+	{ x:[10,-100,-100], y:[10,-100,150], vx:[-.05,1,-.499], vy:[.05,0,-.5], m:[10,1.1,1] },
+	{ x:[10,-100,-100], y:[10,-100,150], vx:[-.05,1.07,-.599], vy:[.05,-0.1,-.7], m:[12,1.1,1] },
+	{ x:[10,-100,-100], y:[10,-100,150], vx:[-.05,1.07,-.599], vy:[.05,-0.1,-.7], m:[11,.6,.5] },
+	{ x:[0,0,0], y:[0,-150,150], vx:[0,-1.22,1.23], vy:[0,0,0], m:[10,.5,.505] },
+	{ x:[0,0,0], y:[0,170,150], vx:[-0.06225,0.45,1.2], vy:[0,0,0], m:[10,.05,.5] },
+	{ x:[210,100,100,350], y:[10,-100,150,0], vx:[-.05,.849,-.943,0], vy:[.03,-.849,-.566,1.1], m:[10,1,1,1] },
+	{ x:[10,-100], y:[10,-100], vx:[-.1,1], vy:[0,0], m:[10,1] }
+],
+cur_preset=presets[3];
+var dim; //arrays dimension, i.e. number of bodies
+var x,y,vx,vy,m; // working variables
+var ax,ay; //acceleration arrays
+var dt; // time step
+var pl=[],R; //HTML jQuery element and its radius in pixels arrays
+var stop = false;
+//var divs = {};
+var cnt = 0;
+var canvas, ctx;
+var canvas_w, canvas_h;
+var l0, t0;
+var E;
+var K_, U_, E_, DT_;
+var timer;
+var zoom=1;
+var allow_dt_adjustment=false,dEupper,dE_drop_factor,dElower,dE_stack,dt_stack,dt_lower;
+var center_of_mass_frame=false,inertial_frame_vx,inertial_frame_vy,frame_v_calculated;
+//----------------------- functions -----------------------
+var dim_preset;
+function show_preset(preset) {
+	dim_preset = ui_from_model(dim_preset, preset, $('#settings-container-div').empty());
+}
+function get_preset() {
+	return model_from_ui(dim_preset, $('#settings-container-div'));
+}
+function init() {
+
+	$("#slider").slider({
+		step: 25,
+		value: 100,
+		min: 25,
+		max: 200,
+		change: function(event, ui) {
+//			var image = new Image();
+//			image.src = canvas.toDataURL('image/png');
+			clear_canvas();
+//			var z0=zoom;
+			zoom=ui.value/100;
+//			var z_=zoom/z0;
+//			ctx.setTransform(z_,0,0,z_,l0*(1-z_),t0*(1-z_));
+//			ctx.drawImage(image,0,0);
+//			ctx.setTransform(1,0,0,1,0,0);
+			$("#zoom").html(ui.value+"%");
+		},
+		slide: function(event, ui) {
+			$("#zoom").html(ui.value+"%");
+		}
+	});
+
+	var w=800, h=600;
+	$("#settings-a").fancybox({
+		maxWidth	: w,
+		maxHeight	: h,
+		minWidth	: w,
+		minHeight	: h,
+		fitToView	: false,
+		width		: w, // '70%',
+		height		: h, // '70%',
+		autoSize	: false,
+		closeClick	: false,
+		openEffect	: 'none',
+		closeEffect	: 'none',
+		beforeShow	: function() { show_preset(cur_preset); }
+	});
+
+	K_ = document.getElementById('K_');
+	U_ = document.getElementById('U_');
+	E_ = document.getElementById('E_');
+	DT_ = document.getElementById('DT_');
+	canvas = document.getElementById('canvas');
+	canvas_w = $(document).width() - 5;
+	canvas_h = $(document).height() - 50;
+	$(canvas).attr('width', canvas_w).attr('height', canvas_h);
+	ctx = canvas.getContext('2d');
+	ctx.fillStyle = "rgb(200,0,0)";
+	
+	restart(cur_preset);
+}
+function clear_canvas(preserve_transform) {
+	// Clear the canvas:
+	// Store the current transformation matrix
+	if (preserve_transform)
+		ctx.save();
+	// Use the identity matrix while clearing the canvas
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	ctx.clearRect(0, 0, canvas.width, canvas.height);
+	// Restore the transform
+	if (preserve_transform)
+		ctx.restore();
+}
+function restart(preset) {
+
+	// reset the origin location
+	l0 = canvas_w / 2;
+	t0 = canvas_h / 2;
+	
+	//reset the time step
+	dt=1;
+
+	// Copy preset values (arrays) to the working variables
+	x=preset.x.slice(0); y=preset.y.slice(0); vx=preset.vx.slice(0); vy=preset.vy.slice(0); m=preset.m.slice(0);
+	
+	//reset the arrays dimension
+	dim=m.length;
+
+	//Remove old pl elements from DOM
+	for (var i=0; i<pl.length; i++)
+		pl[i].remove();
+
+	//Initialize pl and R
+	pl=new Array(dim); R=new Array(dim);
+	var I=-1, M=0;
+	for (var i=0; i<dim; i++)
+		if (m[i]>M)
+			M=m[I=i];
+	for (var i=0; i<dim; i++) {
+		pl[i]=$('<img src="' + (i==I?'earth':'moon') + '.png" style="position:absolute;top:-500px;left:-500px;" />').appendTo('body');
+		R[i]=i==I?16:8;
+	}
+	
+	//Create acceleration arrays
+	ax=new Array(dim); ay=new Array(dim);
+
+	clear_canvas();
+
+	dEupper = 0.01; dE_drop_factor = 0.99; dElower = -1; dE_stack = []; dt_stack = []; dt_lower = 0.001;
+	
+	frame_v_calculated = false;
+	
+	E = energy().E;
+
+	window.clearTimeout(timer);
+	timer = window.setTimeout(run,0);
+}
+function trace(l,t) {
+/*	var key = l+","+t;
+	if (!divs[key]) {
+		divs[key] =
+			$('<div style="position:absolute;left:'+l+'px;top:'+t+'px;width:1px;height:1px;background-color:gray;" />').appendTo('body');
+		window.setTimeout(function() {
+			divs[key].remove();
+			delete divs[key];
+		}, 20000);
+	}
+*/
+	ctx.fillRect (l, t, 1, 1);
+}
+function energy() {
+	var K = 0, U = 0;
+	for (var i=0; i<dim; i++)
+		K += m[i] * (vx[i] * vx[i] + vy[i] * vy[i]) / 2;
+	for (var i=0; i<dim-1; i++)
+		for (var j=i+1; j<dim; j++) {
+			var	dt_2 = dt/2,
+				dx = x[j]-vx[j]*dt_2-x[i]+vx[i]*dt_2, dy = y[j]-vy[j]*dt_2-y[i]+vy[i]*dt_2;
+			U -= G*m[i]*m[j]/Math.sqrt(dx*dx+dy*dy);
+		}
+	return {K:K,U:U,E:K+U};
+}
+function adjust_dt(new_dt) {
+	var ddt4r=(dt-new_dt)/2;
+	for (var i=0; i<dim; i++) {
+		//back to previous position in time
+		x[i] -= vx[i]*dt;
+		y[i] -= vy[i]*dt;
+		vx[i] -= ax[i]*dt;
+		vy[i] -= ay[i]*dt;
+		//...and then even more back in time for x, y
+		x[i] -= vx[i]*ddt4r;
+		y[i] -= vy[i]*ddt4r;
+	}
+	dt = new_dt;
+}
+function run() {
+
+	for (var i=0; i<dim; i++) {
+		var	l = Math.round(l0+x[i]*zoom),
+			t = Math.round(t0+y[i]*zoom);
+		if (l >= 0 && l <= canvas_w)
+			pl[i].css('left',(l-R[i])+'px');
+		if (t >= 0 && t <= canvas_h)
+			pl[i].css('top',(t-R[i])+'px');
+		//if (cnt % 5 == 0)
+			trace(l,t);
+	}
+
+	if (center_of_mass_frame) {
+		if (!frame_v_calculated) {
+			inertial_frame_vx = inertial_frame_vy = 0;
+			for (var i=0; i<dim; i++) {
+				inertial_frame_vx += m[i]*vx[i];
+				inertial_frame_vy += m[i]*vy[i];
+			}		
+			var total_M = 0;
+			for (var i=0; i<dim; i++) {
+				total_M += m[i];
+			}
+			inertial_frame_vx /= total_M;
+			inertial_frame_vy /= total_M;
+			frame_v_calculated = true;
+		}
+	} else if (frame_v_calculated) {
+		frame_v_calculated = false;
+	}
+
+var set_dElower = false;
+while(true) { //outer loop for time step adjustment
+
+	for (var i=0; i<dim; i++)
+		ax[i]=ay[i]=0;
+
+	for (var i=0; i<dim-1; i++) {
+		for (var j=i+1; j<dim; j++) {
+			var	dx = x[j]-x[i], dy = y[j]-y[i],
+				r2 = dx*dx+dy*dy,
+				fx_m2 = G*Math.pow(r2,-1.5)*dx,
+				fy_m2 = G*Math.pow(r2,-1.5)*dy;
+			ax[i] += m[j]*fx_m2;
+			ax[j] -= m[i]*fx_m2;
+			ay[i] += m[j]*fy_m2;
+			ay[j] -= m[i]*fy_m2;
+		}
+	}
+
+	for (var i=0; i<dim; i++) {
+		vx[i] += ax[i]*dt;
+		vy[i] += ay[i]*dt;
+		x[i] += vx[i]*dt;
+		y[i] += vy[i]*dt;
+	}
+
+	var enrg = energy();
+	
+	var dE = Math.abs(E - enrg.E);
+
+	if (!allow_dt_adjustment)
+		break; //outer loop for time step adjustment
+
+	if (set_dElower)
+		dElower = dE;
+	
+	if (dE > dEupper && dt > dt_lower) {
+		if (!set_dElower) {
+			dt_stack.push(dt);
+			dE_stack.push(dElower);
+			set_dElower = true;
+		}
+		adjust_dt(dt*Math.pow(dEupper*dE_drop_factor/dE, 0.25));
+		continue; //outer loop for time step adjustment
+	}
+
+	if (dE < dElower) {
+		var _dt = dt_stack.pop();
+		if (_dt) {
+			set_dElower = false;
+			dElower = dE_stack.pop();
+			adjust_dt(_dt);
+			continue; //outer loop for time step adjustment
+		}
+	}
+	
+	break; //outer loop for time step adjustment
+} //outer loop for time step adjustment
+
+	if (center_of_mass_frame) {
+		l0-=inertial_frame_vx*dt*zoom;
+		t0-=inertial_frame_vy*dt*zoom;
+	}
+
+	E = enrg.E;
+
+	K_.value = enrg.K.toFixed(3);
+	U_.value = enrg.U.toFixed(3);
+	E_.value = enrg.E.toFixed(4);
+	DT_.value = dt.toFixed(4);
+
+	cnt++;
+	if (!stop)
+		timer = window.setTimeout(run,0);
+}
+</script>
+</head>
+<body onload="javascript:init();" style="margin:0;">
+<canvas id="canvas" style="border: 1px solid;" width="500" height="500"></canvas><br />
+<button onclick="javascript:stop=!stop;if(!stop)run();">Stop/Start</button>
+&nbsp; K = <input type='text' id='K_' style="width:60px;border-color:transparent;" readonly="readonly" />;
+&nbsp; U = <input type='text' id='U_' style="width:60px;border-color:transparent;" readonly="readonly" />;
+&nbsp; E = <input type='text' id='E_' style="width:60px;border-color:transparent;" readonly="readonly" />
+&nbsp; dt = <input type='text' id='DT_' style="width:60px;border-color:transparent;" readonly="readonly" />
+&nbsp; <input type='checkbox' id='DT_adjust' onclick='javascript:allow_dt_adjustment=this.checked;' /><label for='DT_adjust'>adjust dt</label>
+&nbsp; <input type='checkbox' id='center_of_mass_frame' onclick='javascript:center_of_mass_frame=this.checked;' /><label for='center_of_mass_frame'>center-of-mass frame</label>
+&nbsp;&nbsp;&nbsp;&nbsp;<a id="settings-a" href="#settings-div">Settings...</a>
+&nbsp;&nbsp;&nbsp;Zoom:&nbsp;<span id="zoom">100%</span>&nbsp;&nbsp;<div id="slider" style="font-size:0.6em;width:200px;display:inline-block;"></div>
+<div id="settings-div" style="display:none;">Presets: &nbsp;&nbsp; 
+<a href="javascript:show_preset(presets[0]);">1</a>&nbsp;&nbsp; 
+<a href="javascript:show_preset(presets[1]);">2</a>&nbsp;&nbsp; 
+<a href="javascript:show_preset(presets[2]);">3</a>&nbsp;&nbsp; 
+<a href="javascript:show_preset(presets[3]);">4 (default)</a>&nbsp;&nbsp; 
+<a href="javascript:show_preset(presets[4]);">5 (Sun, Earth & Moon)</a>&nbsp;&nbsp; 
+<a href="javascript:show_preset(presets[5]);">6 (4 bodies)</a>&nbsp;&nbsp; 
+<a href="javascript:show_preset(presets[6]);">7 (2 bodies)</a>&nbsp;&nbsp; 
+<hr />
+<div id="settings-container-div"></div>
+<button onclick="javascript:$.fancybox.close();restart(cur_preset=get_preset());">Restart</button>
+</div>
+</body>
+</html>
