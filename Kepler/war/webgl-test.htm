@@ -1,0 +1,209 @@
+<html>
+<head>
+<title>WebGL</title>
+<!--[if lte IE 8]><script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/flot/0.8.2/excanvas.min.js"></script><![endif]-->
+<script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/three.js/r61/three.min.js"></script>
+</head>
+<body style="overflow:hidden;">
+</body>
+<script type="text/javascript">
+Detector = {
+
+	canvas: !! window.CanvasRenderingContext2D,
+	webgl: ( function () { try { return !! window.WebGLRenderingContext && !! document.createElement( 'canvas' ).getContext( 'experimental-webgl' ); } catch( e ) { return false; } } )(),
+	workers: !! window.Worker,
+	fileapi: window.File && window.FileReader && window.FileList && window.Blob,
+
+	getWebGLErrorMessage: function () {
+
+		var element = document.createElement( 'div' );
+		element.id = 'webgl-error-message';
+		element.style.fontFamily = 'monospace';
+		element.style.fontSize = '13px';
+		element.style.fontWeight = 'normal';
+		element.style.textAlign = 'center';
+		element.style.background = '#fff';
+		element.style.color = '#000';
+		element.style.padding = '1.5em';
+		element.style.width = '400px';
+		element.style.margin = '5em auto 0';
+
+		if ( ! this.webgl ) {
+
+			element.innerHTML = window.WebGLRenderingContext ? [
+				'Your graphics card does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation" style="color:#000">WebGL</a>.<br />',
+				'Find out how to get it <a href="http://get.webgl.org/" style="color:#000">here</a>.'
+			].join( '\n' ) : [
+				'Your browser does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation" style="color:#000">WebGL</a>.<br/>',
+				'Find out how to get it <a href="http://get.webgl.org/" style="color:#000">here</a>.'
+			].join( '\n' );
+
+		}
+
+		return element;
+
+	},
+
+	addGetWebGLMessage: function ( parameters ) {
+
+		var parent, id, element;
+
+		parameters = parameters || {};
+
+		parent = parameters.parent !== undefined ? parameters.parent : document.body;
+		id = parameters.id !== undefined ? parameters.id : 'oldie';
+
+		element = Detector.getWebGLErrorMessage();
+		element.id = id;
+
+		parent.appendChild( element );
+
+	}
+
+};
+
+var camera, scene, renderer;
+var geometry, material, mesh, mesh2, mesh3, mesh4;
+var v = [{x:-.5,y:-.4,z:-1},{x:.5,y:.4,z:1},{x:-.1,y:-1,z:0}];
+
+init();
+animate();
+
+function init() {
+
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 10000);
+    camera.position.z = 1000;
+
+    scene = new THREE.Scene();
+
+  	// create a canvas element
+	var canvas1 = document.createElement('canvas');
+	var context1 = canvas1.getContext('2d');
+	context1.font = "Bold 40px Sans Serif";
+	context1.fillStyle = "rgba(255,0,0,0.95)";
+    context1.fillText('Hello, world!', 20, 75);
+   	// canvas contents will be used for a texture
+	var texture1 = new THREE.Texture(canvas1) 
+	texture1.needsUpdate = true;
+	// canvas contents will be used for a texture
+	var texture1 = new THREE.Texture(canvas1) 
+	texture1.needsUpdate = true;
+
+    var material1 = new THREE.MeshPhongMaterial( {map: texture1, side:THREE.DoubleSide } );
+    material1.transparent = true;
+    mesh4 = new THREE.Mesh(
+        new THREE.PlaneGeometry(canvas1.width, canvas1.height),
+        material1
+      );
+	mesh4.position.set(0,-10,450);
+	scene.add( mesh4 );
+      
+    geometry = new THREE.CubeGeometry(200, 200, 200);
+    //geometry = new THREE.SphereGeometry(200, 200, 200);
+    material = new THREE.MeshPhongMaterial({
+        //map: texture1,
+        color: 0xff0000/*,
+        wireframe: true*/,
+        opacity:1.0,
+        specular: 0x707000
+    });
+    mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0,200,0);
+    scene.add(mesh);
+
+    geometry = new THREE.CubeGeometry(200, 200, 200);
+    //geometry = new THREE.SphereGeometry(200, 200, 200);
+    material = new THREE.MeshPhongMaterial({
+        color: 0x00ff00/*,
+        wireframe: true*/,
+        opacity:1.0,
+        specular: 0x707000
+    });
+    mesh2 = new THREE.Mesh(geometry, material);
+    mesh2.position.set(200,-200,-200);
+    scene.add(mesh2);
+
+    geometry = new THREE.CubeGeometry(200, 200, 200);
+    //geometry = new THREE.SphereGeometry(200, 200, 200);
+    material = new THREE.MeshPhongMaterial({
+        color: 0x0000ff/*,
+        wireframe: true*/,
+        opacity:1.0,
+        specular: 0x707000
+    });
+    mesh3 = new THREE.Mesh(geometry, material);
+    mesh3.position.set(-200,-200,200);
+    scene.add(mesh3);
+
+	// LIGHT
+	var light = new THREE.PointLight(0xffffff);
+	light.position.set(-150,150,500);
+	
+	var lightbulbGeometry = new THREE.SphereGeometry( 10, 16, 8 );
+	var lightbulbMaterial = new THREE.MeshBasicMaterial( { color: 0xffff44, transparent: true,  opacity: 0.8, blending: THREE.AdditiveBlending } );
+	var wireMaterial = new THREE.MeshBasicMaterial( { color: 0x000000, wireframe: true } );
+	var materialArray = [lightbulbMaterial, wireMaterial];
+	var lightbulb = THREE.SceneUtils.createMultiMaterialObject( lightbulbGeometry, materialArray );
+	// var lightbulb = new THREE.Mesh( lightbulbGeometry, lightbulbMaterial );
+	lightbulb.position = light.position;
+	// lightbulb.material.;
+	scene.add(lightbulb);
+	scene.add(light);
+
+  	var ambientLight = new THREE.AmbientLight(0x444444);
+	scene.add(ambientLight);
+
+
+    //renderer = new THREE.CanvasRenderer();
+	// RENDERER
+    if ( Detector.webgl ) { renderer = new THREE.WebGLRenderer( {antialias:true} ); alert("WebGL!"); } else { renderer = new THREE.CanvasRenderer(); }
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    document.body.appendChild(renderer.domElement);
+    //$('<input type="checkbox" style="position:absolute;" />').prependTo('body');
+}
+
+function move_bounce_coord(mesh, v, coord) {
+    mesh.position[coord] += v[coord];
+    if (mesh.position[coord] > 400) {
+        v[coord] = -v[coord];
+	mesh.position[coord] = 400 - (mesh.position[coord] - 400);
+    } else if (mesh.position[coord] < -400) {
+        v[coord] = -v[coord];
+	mesh.position[coord] = -400 - (mesh.position[coord] + 400);
+    }
+}
+function move_bounce(mesh, v) {
+    move_bounce_coord(mesh, v, "x");
+    move_bounce_coord(mesh, v, "y");
+    move_bounce_coord(mesh, v, "z");
+}
+
+function animate() {
+
+    // note: three.js includes requestAnimationFrame shim
+    requestAnimationFrame(animate);
+
+    mesh.rotation.x += 0.01;
+    mesh.rotation.y += 0.02;
+    
+    move_bounce(mesh, v[0]);
+
+    mesh2.rotation.x -= 0.01;
+    mesh2.rotation.y -= 0.02;
+    
+    move_bounce(mesh2, v[1]);
+
+    mesh3.rotation.x -= 0.02;
+    mesh3.rotation.y -= 0.01;
+    
+    move_bounce(mesh3, v[2]);
+
+    //mesh4.rotation.x += 0.01;
+    mesh4.rotation.y += 0.02;
+
+    renderer.render(scene, camera);
+
+}
+</script>
+</html>
